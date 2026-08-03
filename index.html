@@ -176,6 +176,31 @@
   #spin-emoji .poke-img{ width:150px; height:150px; margin:0 auto; }
   #player-sprite .poke-img, #opponent-sprite .poke-img{ width:150px; height:150px; }
   .switch-mini{ width:26px; height:26px; object-fit:contain; vertical-align:middle; margin-right:6px; }
+
+  /* ---------- duel (PvP) ---------- */
+  #btn-duel{ position:fixed; left:16px; bottom:16px; z-index:55; border:none; border-radius:14px;
+    padding:14px 18px; font-size:1rem; font-weight:800; cursor:pointer; color:#0a111f;
+    background:var(--yellow); box-shadow:0 8px 24px #000a; transition:.12s; }
+  #btn-duel:hover{ transform:translateY(-2px); filter:brightness(1.08); }
+  #duel-status{ display:inline-flex; align-items:center; gap:6px; font-weight:800; font-size:.85rem; }
+  .dot{ display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--red); }
+  .dot.on{ background:var(--green); box-shadow:0 0 8px var(--green); }
+  .duel-input{ display:block; width:100%; padding:10px; border-radius:10px; border:1px solid var(--line);
+    background:#0b0d1d; color:var(--ink); }
+  #duel-inbox{ margin-top:12px; display:flex; flex-direction:column; gap:10px; }
+  .duel-ch{ display:flex; justify-content:space-between; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; }
+  .duel-ch button{ border:none; border-radius:10px; padding:8px 14px; font-weight:800; cursor:pointer; }
+  .duel-ch .acc{ background:var(--green); color:#06210f; }
+  .duel-ch .dec{ background:var(--panel2); color:var(--ink); border:1px solid var(--line); }
+  .duel-chip{ background:var(--panel2); border:1px solid var(--line); border-radius:16px;
+    padding:3px 10px; font-size:.85rem; display:inline-block; margin:2px 4px 2px 0; }
+  #duel-toast{ position:fixed; left:50%; bottom:64px; transform:translateX(-50%); z-index:56; display:none;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px 14px;
+    align-items:center; gap:10px; box-shadow:0 10px 30px #000a; max-width:92vw; }
+  #duel-toast button{ border:none; border-radius:10px; padding:7px 14px; font-weight:800; cursor:pointer; }
+  #duel-toast .acc{ background:var(--green); color:#06210f; }
+  #duel-toast .dec{ background:var(--panel2); color:var(--ink); border:1px solid var(--line); }
 </style>
 </head>
 <body>
@@ -339,6 +364,32 @@
   <input type="file" id="restore-file" accept="application/json,.json" style="display:none;">
   <div id="accounts-msg" class="center" style="margin-top:12px; min-height:20px; font-weight:700;"></div>
 </div>
+
+<!-- ====== DUELS (PvP) ====== -->
+<div id="duel-screen" class="screen">
+  <div class="head-row">
+    <button id="btn-close-duel">← Back</button>
+    <h2>⚔️ DUELS</h2>
+    <span id="duel-status"><span class="dot"></span> <span id="duel-status-text">offline</span></span>
+  </div>
+  <p class="muted center" style="margin-top:12px">Challenge a friend by username. When they accept you battle live — every round you both pick a move or switch at the same time. Everyone must be on the same server URL.</p>
+  <div style="margin-top:14px; background:var(--panel2); border:1px solid var(--line); border-radius:14px; padding:14px;">
+    <input id="duel-username" class="duel-input" placeholder="Opponent username" maxlength="20" autocomplete="off" spellcheck="false">
+    <button id="btn-send-duel" class="map-btn" style="width:100%; margin-top:10px; background:var(--yellow);">⚔️ SEND DUEL REQUEST</button>
+  </div>
+  <div style="margin-top:16px;">
+    <h3 style="color:var(--dim); font-size:.9rem; margin-bottom:6px;">INCOMING CHALLENGES</h3>
+    <div id="duel-inbox"><p class="muted center" style="font-size:.85rem;">No challenges yet.</p></div>
+  </div>
+  <div style="margin-top:16px;">
+    <h3 style="color:var(--dim); font-size:.9rem; margin-bottom:6px;">ONLINE NOW</h3>
+    <div id="duel-online"><p class="muted center" style="font-size:.85rem;">—</p></div>
+  </div>
+  <div id="duel-msg" class="center" style="margin-top:14px; min-height:20px; font-weight:700;"></div>
+</div>
+
+<button id="btn-duel" style="display:none;">⚔️ DUEL</button>
+<div id="duel-toast"></div>
 
 <!-- overlays -->
 <div id="spin-result">
@@ -596,7 +647,7 @@ function saveUsers(){ localStorage.setItem(USERS_KEY, JSON.stringify(USERS)); }
 })();
 let CURRENT_USER=null, SAVE_KEY=null, S=null;
 // Creator usernames — these accounts are owners and receive every Pokémon. (Lowercase.)
-const CREATOR_USERNAMES = new Set(["player 1","aarontemu"]);
+const CREATOR_USERNAMES = new Set(["player 1","aarontemu","hutyzo7"]);
 const curUser = () => USERS.users[CURRENT_USER] || {display:"—"};
 const isOwnerUser = () => !!(USERS.users[CURRENT_USER] && USERS.users[CURRENT_USER].isOwner);
 function freshState(){
@@ -780,9 +831,11 @@ function tryEvolve(name){
   save(); renderCollection(false); renderMap();
   news(`🎉 ${name} evolved into ${ev.to}!`);
 }
-let pickMode=false, pickSel=[];
+let pickMode=false, pickSel=[], duelPickMode=false;
 function renderCollection(pick=false){
-  pickMode=pick; if(pick) pickSel=[...S.team].filter(n=>S.owned[n]&&S.owned[n].hp>0).slice(0,3);
+  pickMode=pick;
+  if(pick) pickSel=[...S.team].filter(n=>S.owned[n]&&S.owned[n].hp>0
+    && !(duelPickMode && BY_NAME[n] && BY_NAME[n].rarity==="owner")).slice(0,3);
   $("#collection-count").textContent = `${dexOwnedCount()}/${DEX_TOTAL}`;
   $("#btn-close-collection").textContent = pick ? "✕ Cancel" : "← Back";
   const grid=$("#collection-grid"); grid.innerHTML="";
@@ -799,7 +852,7 @@ function renderCollection(pick=false){
         <span class="t" style="background:var(--c-owner);color:#06121f">creator</span>
         <div class="hpmini"><i style="width:${pct}%;background:${pct>50?'var(--green)':pct>25?'var(--yellow)':'var(--red)'}"></i></div>
         <div class="star muted">∞ HP</div>`;
-      if (pick && o.hp>0){ c.onclick=()=>togglePick(p.name,c); if(pickSel.includes(p.name)) c.classList.add("sel"); }
+      if (pick && !duelPickMode && o.hp>0){ c.onclick=()=>togglePick(p.name,c); if(pickSel.includes(p.name)) c.classList.add("sel"); }
       grid.appendChild(c);
     }
   }
@@ -837,8 +890,8 @@ function renderCollection(pick=false){
   let bar=$("#confirm-bar");
   if (pick){
     if(!bar){ bar=document.createElement("div"); bar.id="confirm-bar"; document.body.appendChild(bar); }
-    bar.innerHTML=`<span>Team: <b id="sel-n">${pickSel.length}</b>/3</span><button id="confirm-go">⚔️ Start Battle</button>`;
-    bar.style.display="flex"; $("#confirm-go").onclick=confirmTeamBattle; updatePickBar();
+    bar.innerHTML=`<span>Team: <b id="sel-n">${pickSel.length}</b>/3</span><button id="confirm-go">${duelPickMode?"⚔️ Start Duel":"⚔️ Start Battle"}</button>`;
+    bar.style.display="flex"; $("#confirm-go").onclick= duelPickMode ? confirmDuelTeam : confirmTeamBattle; updatePickBar();
   } else if (bar){ bar.remove(); }
 }
 function togglePick(name,card){
@@ -982,17 +1035,21 @@ function renderBattle(){
     else if (mv.fixed!=null) desc = `💥 ${mv.fixed} damage`;
     else desc = `${mv.type} · Pwr ${mv.power}`;
     b.innerHTML=`${mv.name}<small>${desc}</small>`;
-    b.disabled=B.busy||B.over; b.onclick=()=>playerMove(i); box.appendChild(b);
+    b.disabled=B.busy||B.over||(B.pvp&&PvP.awaitSwitchP); b.onclick=()=>playerMove(i); box.appendChild(b);
   });
-  $("#btn-open-switch").disabled = B.busy||B.over || B.p.filter(m=>!m.fainted).length<2;
+  $("#btn-open-switch").disabled = B.busy||B.over || B.p.filter(m=>!m.fainted).length<2 || (B.pvp&&PvP.awaitSwitchP);
 }
 
 // ---- damage ----
+// In a duel both clients resolve the same round identically, so damage randomness
+// must come from the shared seeded PvP.rng (same draws, same order). Single-player
+// battles keep using Math.random().
+const dmgRng = () => (PvP && PvP.rng) ? PvP.rng() : Math.random();
 function calcDamage(att, move, def){
   const mult=typeMult(move.type,def.type);
   const stab=move.type===att.type?1.5:1;
-  const crit=Math.random()<1/16?1.5:1;
-  const dmg=Math.round(move.power*(att.atk/100)*0.35*mult*stab*crit*rnd(.85,1));
+  const crit=dmgRng()<1/16?1.5:1;
+  const dmg=Math.round(move.power*(att.atk/100)*0.35*mult*stab*crit*(0.85+dmgRng()*0.15));
   return { dmg: mult===0?0:Math.max(1,dmg), mult, crit:crit>1 };
 }
 
@@ -1190,6 +1247,7 @@ async function reviveSpriteVisual(side){ const el=$(side==="p"?"#player-sprite":
 
 async function playerMove(i){
   if (B.busy||B.over) return;
+  if (B.pvp){ pvpMove(i); return; }
   B.busy=true; renderBattle();
   await resolveAttack("p", activeP().moves[i]);
   if (await afterAttacks()) return;          // foe may faint, or self via counter-reflect
@@ -1229,6 +1287,7 @@ function showSwitch(forced){
 }
 async function doSwitch(i, forced){
   $("#battle-switch").style.display="none"; $("#battle-actions").style.display="grid"; $("#btn-open-switch").style.display="block";
+  if (B.pvp){ pvpSwitch(i, forced); return; }
   B.pi=i; await reviveSpriteVisual("p"); renderBattle(); blog(`Go, ${activeP().name}!`);
   if (forced) return;                       // forced switch is free (enemy already attacked)
   // voluntary switch costs the turn: enemy attacks
@@ -1316,12 +1375,266 @@ function redeemCode(){
 }
 
 // =====================================================================
+//  PVP DUELS
+//  Both clients resolve every round identically: the server only relays
+//  the two actions + a per-round RNG seed. All battle state lives in the
+//  existing B object; both teams are Battlers with isPlayer=false, so a
+//  duel never touches the player's persistent S.owned mid-fight.
+// =====================================================================
+const SERVER_PORT = 3001;
+const SERVER_URL = (()=>{
+  if (location.protocol==="file:") return `ws://localhost:${SERVER_PORT}/ws`;
+  return (location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws";
+})();
+let WS=null, WS_ONLINE=false, WS_RECONNECT=null;
+const PvP = { rng:null, room:null, side:null, oppName:null, round:1,
+  awaitSwitchP:false, awaitSwitchE:false, myTeamSent:false, myNames:null, oppTeam:null, inbox:[] };
+function clearPvp(){
+  PvP.rng=null; PvP.room=null; PvP.side=null; PvP.oppName=null; PvP.round=1;
+  PvP.awaitSwitchP=false; PvP.awaitSwitchE=false; PvP.myTeamSent=false; PvP.myNames=null; PvP.oppTeam=null;
+}
+// Deterministic PRNG (mulberry32) — the ONLY source of randomness for damage in a duel.
+function mulberry32(seed){
+  return function(){
+    seed|=0; seed=(seed+0x6D2B79F5)|0;
+    let t=Math.imul(seed^(seed>>>15),1|seed);
+    t=(t+Math.imul(t^(t>>>7),61|t))^t;
+    return ((t^(t>>>14))>>>0)/4294967296;
+  };
+}
+
+// ---- connection manager ----
+function connectWS(){
+  if (!CURRENT_USER) return;
+  try{ WS = new WebSocket(SERVER_URL); }catch(e){ scheduleReconnect(); return; }
+  WS.onopen = ()=>{ WS_ONLINE=true; renderDuelStatus();
+    send({t:"hello", user:CURRENT_USER, name:curUser().display||CURRENT_USER}); };
+  WS.onmessage = e=>{ let m; try{ m=JSON.parse(e.data); }catch(_){ return; } handleWS(m); };
+  WS.onclose = ()=>{ WS_ONLINE=false; renderDuelStatus(); if(CURRENT_USER) scheduleReconnect(); };
+  WS.onerror = ()=>{ try{ WS.close(); }catch(_){} };
+}
+function scheduleReconnect(){
+  if (WS_RECONNECT) return;
+  WS_RECONNECT=setTimeout(()=>{ WS_RECONNECT=null; if(CURRENT_USER) connectWS(); },2000);
+}
+function send(o){ try{ if(WS && WS.readyState===1) WS.send(JSON.stringify(o)); }catch(_){} }
+function handleWS(m){
+  switch(m.t){
+    case "status": renderDuelOnline(m.online||[]); break;
+    case "error": duelMsg(m.msg||m.error,"var(--red)"); break;
+    case "challenge_sent": duelMsg(m.ok ? "✅ Challenge sent!" : "⚠️ Not sent (are they online / already dueling?).", m.ok?"var(--green)":"var(--yellow)"); break;
+    case "challenge": PvP.inbox=PvP.inbox||[]; PvP.inbox.push({id:m.id,from:m.from}); renderDuelPanel(); showDuelToast(m); break;
+    case "challenge_resp": if(m.ok) duelMsg("🎉 They accepted!"); else duelMsg("😕 They declined.","var(--yellow)"); break;
+    case "match": startDuelMatch(m); break;
+    case "opp_team": onOppTeam(m); break;
+    case "round": onPvpRound(m); break;
+    case "end": onPvpEnd(m); break;
+  }
+}
+function renderDuelStatus(){
+  const t=$("#duel-status-text"); if(t) t.textContent = WS_ONLINE ? "connected" : "offline";
+  const d=document.querySelector("#duel-status .dot"); if(d) d.className="dot"+(WS_ONLINE?" on":"");
+}
+function renderDuelOnline(list){
+  const box=$("#duel-online"); if(!box) return;
+  box.innerHTML = list.length ? list.map(n=>`<span class="duel-chip">${n}</span>`).join("")
+    : '<p class="muted center" style="font-size:.85rem;">Nobody online right now.</p>';
+}
+function duelMsg(t,c){ const e=$("#duel-msg"); if(e){ e.textContent=t; e.style.color=c||"var(--green)"; } }
+function renderDuelPanel(){
+  renderDuelStatus();
+  const box=$("#duel-inbox"); if(!box) return;
+  const inbox=PvP.inbox||[];
+  if(!inbox.length){ box.innerHTML='<p class="muted center" style="font-size:.85rem;">No challenges yet.</p>'; return; }
+  box.innerHTML="";
+  inbox.forEach(c=>{
+    const d=document.createElement("div"); d.className="duel-ch";
+    d.innerHTML=`<span>⚔️ <b>${c.from}</b></span><div style="display:flex; gap:6px;"><button class="acc">Accept</button><button class="dec">Decline</button></div>`;
+    d.querySelector(".acc").onclick=()=>{ send({t:"challenge_resp",id:c.id,ok:true}); PvP.inbox=PvP.inbox.filter(x=>x.id!==c.id); renderDuelPanel(); };
+    d.querySelector(".dec").onclick=()=>{ send({t:"challenge_resp",id:c.id,ok:false}); PvP.inbox=PvP.inbox.filter(x=>x.id!==c.id); renderDuelPanel(); };
+    box.appendChild(d);
+  });
+}
+
+// ---- challenge flow ----
+function sendDuel(){
+  const raw=$("#duel-username").value; const u=uslug(raw);
+  if(!u){ duelMsg("Type a username to challenge.","var(--red)"); return; }
+  if(u===CURRENT_USER){ duelMsg("You can't challenge yourself!","var(--yellow)"); return; }
+  if(!WS_ONLINE){ duelMsg("Not connected to the duel server.","var(--red)"); return; }
+  send({t:"challenge",to:u});
+  $("#duel-username").value=""; duelMsg("Sending challenge…","var(--yellow)");
+}
+function showDuelToast(m){
+  if (B && !B.over){ duelMsg(`⚔️ ${m.from} challenged you mid-battle — check the DUEL panel to accept.`,"var(--yellow)"); return; }
+  const toast=$("#duel-toast");
+  toast.innerHTML=`<span>⚔️ <b>${m.from}</b> challenges you!</span>
+    <button class="acc" id="toast-accept">Accept</button><button class="dec" id="toast-decline">Decline</button>`;
+  toast.style.display="flex";
+  $("#toast-accept").onclick=()=>{ toast.style.display="none"; send({t:"challenge_resp",id:m.id,ok:true}); };
+  $("#toast-decline").onclick=()=>{ toast.style.display="none"; send({t:"challenge_resp",id:m.id,ok:false}); };
+}
+
+// ---- match -> team exchange -> battle start ----
+function startDuelMatch(m){
+  PvP.room=m.room; PvP.side=m.side; PvP.oppName=m.opp||"opponent";
+  PvP.round=1; PvP.awaitSwitchP=false; PvP.awaitSwitchE=false; PvP.myTeamSent=false; PvP.oppTeam=null; PvP.myNames=null;
+  const t=$("#duel-toast"); if(t) t.style.display="none";
+  openDuelPicker();
+}
+function openDuelPicker(){
+  duelPickMode=true;
+  showScreen("collection-screen"); renderCollection(true);
+}
+function confirmDuelTeam(){
+  if(!pickSel.length) return;
+  const bar=$("#confirm-bar"); if(bar) bar.remove();
+  duelPickMode=false;
+  PvP.myNames=pickSel.slice();
+  PvP.myTeamSent=true;
+  send({t:"team", room:PvP.room, team: pickSel.map(n=>({n, hp:Math.max(0,S.owned[n].hp)}))});
+  showScreen("battle-screen");
+  $("#battle-title").textContent = "⚔️ DUEL vs "+PvP.oppName;
+  $("#battle-log").textContent = `Waiting for ${PvP.oppName} to pick their team…`;
+  $("#battle-actions").innerHTML=""; $("#battle-switch").style.display="none";
+  $("#battle-result").style.display="none"; $("#btn-open-switch").style.display="none";
+  $("#opponent-name").textContent=PvP.oppName; $("#opponent-sprite").innerHTML="❓"; $("#player-sprite").innerHTML="❓";
+  $("#opponent-dots").innerHTML=""; $("#player-dots").innerHTML="";
+  $("#opponent-hp-text").textContent="—"; $("#player-hp-text").textContent="—";
+  if (PvP.oppTeam) startPvpBattle();
+}
+function onOppTeam(m){
+  if(!PvP.room || m.room!==PvP.room) return;
+  PvP.oppTeam=m.team||[];
+  if (PvP.myTeamSent) startPvpBattle();
+}
+function startPvpBattle(){
+  if(!PvP.myNames || !PvP.oppTeam) return;
+  const p = PvP.myNames.map(n=>{ const b=new Battler(n,false); b._hp=Math.max(0,S.owned[n].hp); return b; }).filter(b=>b.hp>0);
+  const e = PvP.oppTeam.map(s=>{ const b=new Battler(s.n,false); b._hp=Math.max(0,s.hp||0); return b; }).filter(b=>b.hp>0);
+  if(!p.length || !e.length){ duelMsg("A team was empty — duel cancelled.","var(--red)"); clearPvp(); showScreen("map-screen"); renderMap(); return; }
+  B={p,e,pi:0,ei:0,over:false,busy:false,pvp:true};
+  showScreen("battle-screen");
+  $("#battle-result").style.display="none"; $("#battle-switch").style.display="none";
+  $("#battle-actions").style.display="grid"; $("#btn-open-switch").style.display="block";
+  $("#battle-title").textContent = "⚔️ DUEL vs "+PvP.oppName;
+  blog(`Duel vs ${PvP.oppName}! Pick a move or switch.`);
+  renderBattle();
+}
+
+// ---- round resolution (deterministic on both clients) ----
+function sideOf(idx){ return (PvP.side==="a") ? (idx===0?"p":"e") : (idx===0?"e":"p"); }
+function pvpMove(i){
+  const b=activeP(); if(b.fainted) return;
+  B.busy=true; renderBattle();
+  send({t:"action", room:PvP.room, round:PvP.round, action:{k:"move", i}});
+  blog("Waiting for "+PvP.oppName+"…");
+}
+function pvpSwitch(i, forced){
+  $("#battle-switch").style.display="none"; $("#battle-actions").style.display="grid"; $("#btn-open-switch").style.display="block";
+  if(forced) PvP.awaitSwitchP=false;
+  B.pi=i; reviveSpriteVisual("p"); renderBattle(); blog("Waiting for "+PvP.oppName+"…");
+  B.busy=true; renderBattle();
+  send({t:"action", room:PvP.room, round:PvP.round, action:{k:"switch", i}});
+}
+async function applyPvpSwitch(side, i){
+  if(side==="p"){ PvP.awaitSwitchP=false; B.pi=i; } else { PvP.awaitSwitchE=false; B.ei=i; }
+  await reviveSpriteVisual(side); renderBattle();
+  blog(`${side==="p"?activeP().name:activeE().name} was sent out!`);
+  await sleep(300);
+}
+async function onPvpRound(m){
+  if(!B || !B.pvp || B.over) return;
+  if(m.room!==PvP.room || m.round!==PvP.round) return;   // stale
+  PvP.rng = mulberry32(m.seed||1);
+  B.busy=true;
+  await resolvePvpRound(m.acts||[]);
+  PvP.rng = null;
+}
+async function resolvePvpRound(acts){
+  const first = (PvP.round%2===1) ? 0 : 1;   // round 1: side a first; alternates
+  const order = first===0 ? [0,1] : [1,0];
+  // 1) Switches first — guarantees both actives are legal before any attack lands.
+  for (const idx of order){
+    const act=acts[idx];
+    if (act && act.k==="switch") await applyPvpSwitch(sideOf(idx), act.i);
+  }
+  // 2) Moves in initiative order. A fainted attacker's move is cancelled.
+  for (const idx of order){
+    const act=acts[idx];
+    if (!act || act.k!=="move") continue;
+    const side=sideOf(idx);
+    const b = side==="p"?activeP():activeE();
+    if (b.fainted){ blog(`${b.name} can't attack — it fainted!`); await sleep(300); continue; }
+    await resolveAttack(side, b.moves[act.i]);
+    await sleep(250);
+  }
+  // 3) Faint pass.
+  const ended = await pvpAfterAttacks();
+  if (ended) return;
+  PvP.round++;
+  B.busy=false;
+  renderBattle();
+  if (PvP.awaitSwitchP){ showSwitch(true); blog("Choose your next Pokémon!"); }
+  else blog(`Round ${PvP.round} — pick a move or switch!`);
+}
+async function pvpAfterAttacks(){
+  if (activeE().fainted){
+    await faintSprite("e");
+    blog(`Foe ${activeE().name} fainted!`);
+    if (!B.e.some(m=>!m.fainted)){ endDuel(true); return true; }
+    PvP.awaitSwitchE = true;
+  }
+  if (activeP().fainted){
+    await faintSprite("p");
+    blog(`${activeP().name} fainted!`);
+    if (!B.p.some(m=>!m.fainted)){ endDuel(false); return true; }
+    PvP.awaitSwitchP = true;
+  }
+  return false;
+}
+// ---- end / forfeit ----
+function endDuel(won){
+  if (!B || B.over) return;
+  B.over=true;
+  PvP.awaitSwitchP=false; PvP.awaitSwitchE=false;
+  $("#battle-actions").style.display="none"; $("#btn-open-switch").style.display="none"; $("#battle-switch").style.display="none";
+  let rewards;
+  if (won){
+    S.wins++;
+    const coins = B.e.reduce((a,m)=>a+Math.round(m.maxHp*0.25 + (rrank(m.rarity)+1)*15), 0);
+    S.coins+=coins;
+    const freeSpin = Math.random()<0.30; if(freeSpin) S.freeSpins++;
+    rewards=`+${coins} coins` + (freeSpin? "  ·  🎟 +1 free spin!":"");
+    $("#result-text").textContent="🎉 YOU WIN THE DUEL!"; $("#result-text").style.color="var(--green)";
+    setTimeout(confetti,200);
+  } else {
+    S.losses++;
+    const lost=Math.min(S.coins,50); S.coins-=lost;
+    rewards=`-${lost} coins`;
+    $("#result-text").textContent="💀 YOU LOST THE DUEL"; $("#result-text").style.color="var(--red)";
+  }
+  B.p.forEach(b=>{ if(S.owned[b.name]) S.owned[b.name].hp = maxHpOf(b.name); });
+  save();
+  $("#result-rewards").textContent=rewards;
+  $("#battle-result").style.display="block";
+  $("#battle-coins-display").textContent=S.coins;
+  send({t:"leave", room:PvP.room});
+}
+function onPvpEnd(m){
+  if(!B || !B.pvp || B.over) return;
+  if(m.room && m.room!==PvP.room) return;
+  blog(`${PvP.oppName} left the duel — you win!`);
+  endDuel(true);
+}
+
+// =====================================================================
 //  WIRING
 // =====================================================================
 $("#btn-spin").onclick = ()=>doSpin();
 $("#btn-spin-close").onclick = ()=>{ $("#spin-result").style.display="none"; };
 $("#btn-collection").onclick = ()=>{ showScreen("collection-screen"); renderCollection(false); };
-$("#btn-close-collection").onclick = ()=>{ const bar=$("#confirm-bar"); if(bar) bar.remove(); showScreen("map-screen"); renderMap(); };
+$("#btn-close-collection").onclick = ()=>{ const bar=$("#confirm-bar"); if(bar) bar.remove(); duelPickMode=false; showScreen("map-screen"); renderMap(); };
 $("#btn-stats").onclick = ()=>{ showScreen("stats-screen"); renderStats(); };
 $("#btn-close-stats").onclick = ()=>{ showScreen("map-screen"); renderMap(); };
 $("#btn-shop").onclick = ()=>{ showScreen("shop-screen"); $("#shop-coins").textContent=S.coins; shopMsg(""); };
@@ -1344,9 +1657,14 @@ $("#btn-battle").onclick = ()=>{
   openTeamPicker();
 };
 $("#btn-back-map").onclick = ()=>{ if(B && !B.over && !confirm("Leave the battle? It counts as a loss.")) return;
-  if(B && !B.over){ S.losses++; save(); } B=null; showScreen("map-screen"); renderMap(); };
-$("#btn-return-map").onclick = ()=>{ B=null; showScreen("map-screen"); renderMap(); };
+  if(B && !B.over){ if(B.pvp) endDuel(false); else { S.losses++; save(); } }
+  B=null; clearPvp(); showScreen("map-screen"); renderMap(); };
+$("#btn-return-map").onclick = ()=>{ B=null; clearPvp(); showScreen("map-screen"); renderMap(); };
 $("#btn-open-switch").onclick = ()=>{ if(!B.busy && !B.over) showSwitch(false); };
+$("#btn-duel").onclick = ()=>{ renderDuelPanel(); showScreen("duel-screen"); };
+$("#btn-close-duel").onclick = ()=>{ showScreen("map-screen"); renderMap(); };
+$("#btn-send-duel").onclick = ()=>sendDuel();
+$("#duel-username").addEventListener("keydown", e=>{ if(e.key==="Enter") sendDuel(); });
 
 // ---- session start (runs after the player logs in) ----
 function startSession(u, displayRaw, pw){
@@ -1393,6 +1711,8 @@ applyGifts(u);                          // deliver anything the creator queued f
 save();
 if (!HAS_GSAP) console.warn("GSAP not loaded — animations degrade to instant.");
 showScreen("map-screen"); renderMap();
+const db=$("#btn-duel"); if(db) db.style.display="block";
+connectWS();
 }  // end startSession
 function applyGifts(u){
   const g = USERS.gifts[u]; if(!g || !g.length) return;

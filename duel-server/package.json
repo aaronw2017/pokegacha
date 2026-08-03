@@ -1,0 +1,13 @@
+{
+  "name": "poke-gacha-duel-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dumb WebSocket relay + static server for Poké-Gacha PvP duels",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  }
+}
